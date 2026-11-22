@@ -17,7 +17,9 @@ function fakeHost() {
   const records = new Map()
   const disposers = []
   let route
+  const web = new Map()
   const ctx = {
+    webServer: { register(r) { web.set(r.path, r.handler); return () => web.delete(r.path) } },
     tools: { register(def) { tools.set(def.name, def); return () => tools.delete(def.name) } },
     connection: { fetch: { register(r) { route = r; return async () => {} } } },
     credentials: {
@@ -43,7 +45,11 @@ function fakeHost() {
       await sleep(100)
     }
   }
-  return { tools, records, call, until, file, dispose: () => disposers.forEach((d) => d()) }
+    const hit = (path) => new Promise((resolve) => {
+    const res = { status: 0, body: '', writeHead(code) { this.status = code; return this }, end(b = '') { this.body = String(b); resolve(this) } }
+    web.get(path.split('?')[0])({ method: 'GET', url: path }, res)
+  })
+  return { tools, records, call, until, file, hit, dispose: () => disposers.forEach((d) => d()) }
 }
 
 function httpFixture(port, token) {
@@ -106,6 +112,10 @@ test('oauth without tokens asks for sign-in; bad input is refused with a readabl
   assert.match(dup.error, /already exists/)
   const fin = await h.call({ op: 'finish', text: 'http://127.0.0.1:1/callback?code=x&state=nope' })
   assert.match(fin.error, /No sign-in is waiting/)
+  // The OAuth return route on dsh's own address refuses a made-up state.
+  const page = await h.hit('/plugins/dsh-connectors/callback?code=x&state=forged')
+  assert.equal(page.status, 400)
+  assert.match(page.body, /No sign-in is waiting/)
   h.dispose()
 })
 

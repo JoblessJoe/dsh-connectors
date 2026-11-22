@@ -89,16 +89,17 @@ function useStore() {
 }
 
 // Sign-in attempts live outside React so "Add" can start one for a new row.
-const signIns = new Map<string, { url?: string; error?: string }>()
+const signIns = new Map<string, { url?: string; error?: string; loopback?: boolean }>()
 
-async function startSignIn(id: string) {
+async function startSignIn(id: string, loopback = false) {
   // Open the tab inside the click, or popup blockers eat it; aim it once the URL is known.
   const tab = window.open('', '_blank')
-  signIns.set(id, {}); store.emit()
+  signIns.set(id, { loopback }); store.emit()
   try {
-    const { url } = await api({ op: 'login', id })
+    // The provider sends the browser back to this same dsh address, so it finishes by itself.
+    const { url } = await api({ op: 'login', id, origin: window.location.origin, loopback })
     if (!url) { tab?.close(); signIns.delete(id) } else {
-      signIns.set(id, { url })
+      signIns.set(id, { url, loopback })
       if (tab) { tab.opener = null; tab.location.href = url }
     }
   } catch (e: any) {
@@ -341,19 +342,26 @@ function SignInCallout({ id }: { id: string }) {
     <div className="dcx-callout">
       {info.error ? <div className="dcx-err">{info.error}</div> : !info.url ? <div>Starting sign-in…</div> : (
         <>
-          <ol>
-            <li>Sign in on the page that just opened. No tab? <a href={info.url} target="_blank" rel="noreferrer">Open it here</a>.</li>
-            <li>If dsh runs on this computer, that's it. This updates by itself.</li>
-            <li>If dsh runs on a server, the last page shows an error at <code>127.0.0.1</code>. That's expected. Copy that page's full address and paste it below.</li>
-          </ol>
-          <div className="dcx-row">
-            <Input className="dcx-grow" value={text} placeholder="http://127.0.0.1:…/callback?code=…" onChange={(e) => { setText(e.target.value); setErr('') }} />
-            <Button variant="primary" size="sm" disabled={!text.includes('code=')} onClick={finish}>Finish</Button>
-          </div>
+          {!info.loopback ? (
+            <div>Finish signing in on the page that just opened. This updates by itself. No tab? <a href={info.url} target="_blank" rel="noreferrer">Open it here</a>.</div>
+          ) : (
+            <>
+              <div>Sign in on the page that just opened (<a href={info.url} target="_blank" rel="noreferrer">open it here</a>). It ends on an error page at <code>127.0.0.1</code>; that's expected. Copy that page's full address and paste it here.</div>
+              <div className="dcx-row">
+                <Input className="dcx-grow" value={text} placeholder="http://127.0.0.1:…/callback?code=…" onChange={(e) => { setText(e.target.value); setErr('') }} />
+                <Button variant="primary" size="sm" disabled={!text.includes('code=')} onClick={finish}>Finish</Button>
+              </div>
+            </>
+          )}
           {err && <div className="dcx-err">{err}</div>}
         </>
       )}
-      <div><Button variant="ghost" size="sm" onClick={cancel}>Cancel sign-in</Button></div>
+      <div className="dcx-row dcx-wrap">
+        <Button variant="ghost" size="sm" onClick={cancel}>Cancel sign-in</Button>
+        {!info.loopback && info.url && (
+          <button type="button" className="dcx-link" title="For providers that refuse to send you back to this address" onClick={() => startSignIn(id, true)}>Provider shows a redirect error? Try the paste method</button>
+        )}
+      </div>
     </div>
   )
 }

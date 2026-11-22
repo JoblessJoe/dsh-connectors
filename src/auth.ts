@@ -7,12 +7,11 @@
  *
  * Sign-in: the MCP SDK runs the OAuth 2.1 dance (discovery, dynamic client
  * registration, PKCE, refresh); this file only supplies storage and the
- * redirect. The redirect is a loopback URL on the dsh machine. When the
- * browser runs on that machine the listener catches it; when dsh runs on a
- * server, the browser lands on a dead 127.0.0.1 page and the user pastes that
- * address back into Settings → Connectors. dsh's own routes can't receive the
- * redirect: its session cookie is SameSite=Strict and cross-site requests are
- * refused, by design.
+ * redirect. The redirect goes back to the address the user opened dsh at
+ * (`<origin>/plugins/dsh-connectors/callback`, a plain web-server route, since
+ * dsh's /api routes refuse cross-site requests by design), so it finishes by
+ * itself on any device. Fallback: a loopback listener on the dsh machine plus
+ * "paste the address", for providers that refuse that redirect.
  */
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
@@ -67,6 +66,8 @@ export class ConnectorOAuth implements OAuthClientProvider {
     private secrets: Secrets,
     private redirect: string,
     private onRedirect: (url: URL, state: string | undefined) => void,
+    /** Sign-in mode: only reuse a client registered for this exact redirect. */
+    private strict = false,
   ) {}
 
   get redirectUrl() { return this.redirect }
@@ -95,7 +96,9 @@ export class ConnectorOAuth implements OAuthClientProvider {
     }
     const client: any = secret.client
     // A registration is bound to its redirect URIs; a changed port needs a new one.
-    if (client?.client_id && (!Array.isArray(client.redirect_uris) || client.redirect_uris.includes(this.redirect))) return client
+    // A registration is bound to its redirect URIs, so a sign-in through another
+    // address registers anew. Refreshing keeps whatever client issued the tokens.
+    if (client?.client_id && (!this.strict || !Array.isArray(client.redirect_uris) || client.redirect_uris.includes(this.redirect))) return client
     return undefined
   }
 
@@ -163,16 +166,16 @@ export class LoginDesk {
    * Start a sign-in for one connector. Resolves with the URL to open, or
    * `undefined` when stored tokens were still good (no browser needed).
    */
-  async start(spec: ServerSpec, secrets: Secrets, onFinished: (error?: Error) => void): Promise<string | undefined> {
+  async start(spec: ServerSpec, secrets: Secrets, onFinished: (error?: Error) => void, redirect = this.redirect): Promise<string | undefined> {
     this.sweep()
     for (const [state, p] of this.pending) if (p.id === spec.id) this.pending.delete(state)
     let url: URL | undefined
     let state: string | undefined
-    const provider = new ConnectorOAuth(spec, secrets, this.redirect, (u, s) => { url = u; state = s })
+    const provider = new ConnectorOAuth(spec, secrets, redirect, (u, s) => { url = u; state = s }, true)
     const result = await auth(provider, { serverUrl: spec.url!, ...(spec.scope ? { scope: spec.scope } : {}) })
     if (result === 'AUTHORIZED') return undefined
     if (!url || !state) throw new Error('The server did not start a sign-in.')
-    await this.listen()
+    if (redirect === this.redirect) await this.listen()
     this.pending.set(state, { id: spec.id, provider, serverUrl: spec.url!, scope: spec.scope, expires: Date.now() + LOGIN_TTL_MS, done: onFinished })
     return url.href
   }
@@ -201,7 +204,8 @@ export class LoginDesk {
     await this.stopListening()
   }
 
-  private async finish(params: URLSearchParams): Promise<string> {
+  /** Finish from the redirect's query string (dsh's own callback route or the loopback listener). */
+  async finish(params: URLSearchParams): Promise<string> {
     this.sweep()
     const state = params.get('state') ?? ''
     const pending = this.pending.get(state)
@@ -267,10 +271,10 @@ export class LoginDesk {
   }
 }
 
-const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-function page(res: any, status: number, title: string, text: string) {
+export const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+export function page(res: any, status: number, title: string, text: string, close = false) {
   res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' }).end(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title>` +
-    `<body style="font:16px/1.5 system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center"><h1 style="font-size:1.25rem">${escape(title)}</h1><p>${escape(text)}</p></body>`,
+    `<body style="font:16px/1.5 system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center"><h1 style="font-size:1.25rem">${escape(title)}</h1><p>${escape(text)}</p>${close ? '<script>setTimeout(() => window.close(), 1500)</script>' : ''}</body>`,
   )
 }

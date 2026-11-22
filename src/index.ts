@@ -7,14 +7,14 @@
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { LoginDesk, Secrets } from './auth.ts'
+import { LoginDesk, page, Secrets } from './auth.ts'
 import { Connector } from './connector.ts'
 import { normalize, parseImport, ServerStore, type ServerSpec } from './store.ts'
 
 export { parseImport } from './store.ts'
 
 export const name = 'dsh-connectors'
-export const inject = ['tools', 'connection', 'credentials']
+export const inject = ['tools', 'connection', 'credentials', 'webServer']
 
 export interface Config {
   /** Where the (non-secret) connector list lives. Default: `$DSH_HOME/connectors.json`. */
@@ -24,6 +24,15 @@ export interface Config {
 }
 
 const ROUTE = '/api/dsh-connectors'
+const CALLBACK = '/plugins/dsh-connectors/callback'
+
+/** `https://host[:port]` the browser opened dsh at, or undefined if it isn't one. */
+function originOf(value: unknown): string | undefined {
+  try {
+    const url = new URL(String(value))
+    return (url.protocol === 'https:' || url.protocol === 'http:') ? url.origin : undefined
+  } catch { return undefined }
+}
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
@@ -143,11 +152,15 @@ export function apply(ctx: any, config: Config = {}) {
       case 'login': {
         const c = get(body.id)
         if (c.spec.transport !== 'http' || c.spec.auth !== 'oauth') throw new Error('This connector does not use a sign-in.')
-        const url = await desk.start(c.spec, secrets, (error) => {
+        const done = (error?: Error) => {
           if (disposed) return
           if (error) log('warn', `${c.spec.id}: sign-in failed: ${error.message}`)
           else { log('info', `${c.spec.id}: signed in`); void c.restart() }
-        })
+        }
+        // Back to the address this browser uses for dsh, so it finishes by itself.
+        // `loopback: true` (or no origin) uses the paste-the-address fallback.
+        const origin = body.loopback ? undefined : originOf(body.origin)
+        const url = await desk.start(c.spec, secrets, done, origin ? origin + CALLBACK : desk.redirect)
         if (!url) await c.restart() // stored tokens were still good
         return { url: url ?? null }
       }
@@ -191,6 +204,24 @@ export function apply(ctx: any, config: Config = {}) {
       }
     },
   }), 'dsh-connectors.route')
+
+  // The OAuth redirect lands here. It is a plain web-server route, outside the
+  // /api fence, because it must accept a cross-site navigation from the
+  // provider. The one-time `state` and PKCE verifier are what protect it.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: CALLBACK,
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') { res.writeHead(405).end(); return }
+      const params = new URL(req.url ?? '/', 'http://x').searchParams
+      try {
+        await desk.finish(params)
+        page(res, 200, 'Signed in', 'You can close this tab. The connector is connecting in DeepSeek Harness.', true)
+      } catch (e) {
+        page(res, 400, 'Sign-in failed', e instanceof Error ? e.message : String(e))
+      }
+    },
+  }), 'dsh-connectors.callback')
 
   ctx.effect(() => () => {
     disposed = true

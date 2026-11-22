@@ -31,7 +31,7 @@ Reload the browser tab. **Connectors** appears in the sidebar, right below Proje
 
 - **Any MCP server.** Remote (Streamable HTTP, with automatic fallback to the older SSE transport) or a local command over stdio (`npx`, `uvx`, `docker`, anything).
 - **Real sign-in.** OAuth 2.1 with PKCE, server discovery (RFC 9728 / RFC 8414) and dynamic client registration, done by the official MCP SDK. Works with hosted connectors like Linear, Notion, Sentry or your own FastMCP server behind GitHub login.
-- **Works when dsh runs on a server.** Signing in from your laptop to a headless dsh box is the usual case, not an afterthought. See [Signing in](#signing-in).
+- **Sign-in finishes by itself, anywhere.** The provider sends you back to the dsh address you're using, so it works on a headless server too. No setup. See [Signing in](#signing-in).
 - **Stays signed in.** Tokens live in dsh's own credential store, survive restarts and refresh on their own.
 - **Heals itself.** Dropped connections reconnect with backoff. A tool call during a hiccup waits a few seconds for the server instead of failing.
 - **You decide what agents see.** Turn a whole connector off, or switch single tools off (say, `delete_issue`).
@@ -50,10 +50,11 @@ Nothing in dsh is patched. Both entries are registered by the plugin through dsh
 ## Signing in
 
 1. Click **Sign in** on a connector. The provider's login page opens in a new tab.
-2. **dsh on the same computer as your browser:** that's it. The page updates by itself.
-3. **dsh on a server** (you open it as `https://dsh.example.com`): after you log in, the tab ends on a page that can't load, at `http://127.0.0.1:47391/callback?code=…`. That's expected. Copy that address, paste it into the box on the Connectors page, and click **Finish**.
+2. Log in and accept. The provider sends you back to dsh at `<your dsh address>/plugins/dsh-connectors/callback`, the tab closes, and the connector turns **Connected**. That's it, on any device, whether dsh runs on your laptop or a server.
 
-Why the paste step: OAuth sends your browser back to a fixed address on the dsh machine. dsh's own web routes can't take that redirect, because dsh deliberately refuses cross-site requests and uses a strict session cookie. A loopback address plus "paste the URL" is the same pattern `gcloud`, `rclone` and other CLI tools use on remote machines.
+No setup and no fixed address: the plugin uses whatever address your browser opened dsh at (`http://localhost:3080`, `https://dsh.example.com`, a LAN IP). If you open dsh at a new address, the next sign-in registers it by itself.
+
+**Fallback:** a few providers only accept `localhost` return addresses. For those, click *Try the paste method*: the tab then ends on an error page at `http://127.0.0.1:47391/callback?code=…`; copy that address into the box and click **Finish**.
 
 ## Install
 
@@ -74,13 +75,14 @@ Everything is done on the Connectors page. Two optional settings for the plugin 
 | Key | Default | What it does |
 | --- | ------- | ------------ |
 | `file` | `$DSH_HOME/connectors.json` | Where the connector list (no secrets) is saved |
-| `callbackPort` | `47391` | Loopback port for the sign-in redirect. Keep it fixed: client registrations are tied to it |
+| `callbackPort` | `47391` | Port of the paste-method fallback listener |
 
 ## Security
 
 - **Secrets never touch the connector list.** Tokens, client secrets and OAuth grants go to dsh's credential store (`dsh-connectors/<id>` records). The list file is written with mode `600` anyway.
 - **Secrets never reach the browser.** The page only learns *whether* a token is saved.
-- **The sign-in listener only runs while a sign-in waits**, binds to `127.0.0.1`, checks the OAuth `state` and stops afterwards. Unused sign-ins expire after 15 minutes.
+- **The sign-in return route** (`/plugins/dsh-connectors/callback`) has to accept a cross-site redirect from the provider, so it sits outside dsh's `/api` fence. It only completes a sign-in that dsh itself started: a one-time random `state` plus the PKCE verifier, unused sign-ins expire after 15 minutes. If your dsh sits behind a login proxy, your browser's proxy session covers it.
+- **The fallback listener only runs while a paste-method sign-in waits**, binds to `127.0.0.1` and stops afterwards.
 - **The management route sits behind dsh's own login** and trust checks, like every other `/api` route.
 - **Local commands run as your user**, like any MCP server you'd add by hand. Only add commands you trust.
 
