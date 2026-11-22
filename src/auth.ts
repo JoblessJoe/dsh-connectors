@@ -15,7 +15,7 @@
  */
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { auth, type OAuthClientProvider } from '@modelcontextprotocol/client'
+import { auth, discoverOAuthServerInfo, type OAuthClientProvider } from '@modelcontextprotocol/client'
 import type { ServerSpec } from './store.ts'
 
 export interface Secret {
@@ -57,9 +57,21 @@ export class NeedsLogin extends Error {
  * OAuth storage for one connector, backed by its credential record.
  * `onRedirect` fires when the SDK decides a browser sign-in is unavoidable.
  */
+/**
+ * dsh-connectors' published client identity (OAuth Client ID Metadata Document,
+ * the registration method the MCP spec prefers since 2025-11-25). Hosted on
+ * GitHub Pages from `docs/`. It can only list fixed return addresses, so it
+ * names the loopback listener; RFC 8252 lets servers accept any loopback port.
+ */
+export const CLIENT_METADATA_URL = 'https://joblessjoe.github.io/dsh-connectors/client-metadata.json'
+const isLoopback = (url: string) => url.startsWith('http://127.0.0.1')
+
 export class ConnectorOAuth implements OAuthClientProvider {
   private verifier?: string
   private nextState?: string
+  private discovery?: unknown
+  /** Set for a sign-in that uses the published identity instead of self-registration. */
+  clientMetadataUrl?: string
 
   constructor(
     private spec: ServerSpec,
@@ -95,10 +107,14 @@ export class ConnectorOAuth implements OAuthClientProvider {
       return { client_id: this.spec.clientId, ...(secret.clientSecret ? { client_secret: secret.clientSecret } : {}) } as any
     }
     const client: any = secret.client
-    // A registration is bound to its redirect URIs; a changed port needs a new one.
-    // A registration is bound to its redirect URIs, so a sign-in through another
-    // address registers anew. Refreshing keeps whatever client issued the tokens.
-    if (client?.client_id && (!this.strict || !Array.isArray(client.redirect_uris) || client.redirect_uris.includes(this.redirect))) return client
+    if (!client?.client_id) return undefined
+    // Refreshing keeps whatever client issued the tokens.
+    if (!this.strict) return client
+    // Signing in: a registration is bound to its return addresses, so another
+    // address registers anew. The published identity only lists loopback.
+    if (client.client_id === CLIENT_METADATA_URL) return isLoopback(this.redirect) && this.clientMetadataUrl ? client : undefined
+    if (this.clientMetadataUrl) return undefined
+    if (!Array.isArray(client.redirect_uris) || client.redirect_uris.includes(this.redirect)) return client
     return undefined
   }
 
@@ -119,6 +135,10 @@ export class ConnectorOAuth implements OAuthClientProvider {
   }
 
   saveCodeVerifier(verifier: string) { this.verifier = verifier }
+
+  // The SDK binds the code exchange to the server that issued the code (SEP-2352).
+  saveDiscoveryState(state: unknown) { this.discovery = state }
+  discoveryState() { return this.discovery as any }
 
   codeVerifier() {
     if (!this.verifier) throw new NeedsLogin('Sign-in expired. Start it again.')
@@ -163,21 +183,41 @@ export class LoginDesk {
   }
 
   /**
-   * Start a sign-in for one connector. Resolves with the URL to open, or
-   * `undefined` when stored tokens were still good (no browser needed).
+   * Start a sign-in for one connector. Resolves with the URL to open (and
+   * whether it returns to the loopback listener), or `undefined` when stored
+   * tokens were still good (no browser needed).
+   *
+   * How the client gets its identity, best first:
+   *  1. a client id the user entered (pre-registered),
+   *  2. self-registration (DCR) for `redirect`, the user's own dsh address: no paste,
+   *  3. the published identity (CIMD) with the loopback return: automatic when
+   *     dsh runs on this computer, paste when it runs on a server.
    */
-  async start(spec: ServerSpec, secrets: Secrets, onFinished: (error?: Error) => void, redirect = this.redirect): Promise<string | undefined> {
+  async start(spec: ServerSpec, secrets: Secrets, onFinished: (error?: Error) => void, redirect = this.redirect): Promise<{ url: string; loopback: boolean } | undefined> {
     this.sweep()
     for (const [state, p] of this.pending) if (p.id === spec.id) this.pending.delete(state)
+    let cimd = false
+    if (!spec.clientId) {
+      const meta: any = (await discoverOAuthServerInfo(spec.url!).catch(() => undefined))?.authorizationServerMetadata
+      const dcr = !!meta?.registration_endpoint
+      cimd = meta?.client_id_metadata_document_supported === true && (!dcr || isLoopback(redirect))
+      if (meta && !dcr && !cimd) {
+        throw new Error('This server needs an OAuth client you register yourself. Register one with return address ' +
+          `${redirect}, then enter its client id (and secret) under Edit → Advanced.`)
+      }
+    }
+    if (cimd) redirect = this.redirect
     let url: URL | undefined
     let state: string | undefined
     const provider = new ConnectorOAuth(spec, secrets, redirect, (u, s) => { url = u; state = s }, true)
+    if (cimd) provider.clientMetadataUrl = CLIENT_METADATA_URL
     const result = await auth(provider, { serverUrl: spec.url!, ...(spec.scope ? { scope: spec.scope } : {}) })
     if (result === 'AUTHORIZED') return undefined
     if (!url || !state) throw new Error('The server did not start a sign-in.')
-    if (redirect === this.redirect) await this.listen()
+    const loopback = redirect === this.redirect
+    if (loopback) await this.listen()
     this.pending.set(state, { id: spec.id, provider, serverUrl: spec.url!, scope: spec.scope, expires: Date.now() + LOGIN_TTL_MS, done: onFinished })
-    return url.href
+    return { url: url.href, loopback }
   }
 
   /** Finish from a pasted address (or anything containing `code=` and `state=`). */

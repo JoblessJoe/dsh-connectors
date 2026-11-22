@@ -1,0 +1,13 @@
+{
+  "client_id": "https://joblessjoe.github.io/dsh-connectors/client-metadata.json",
+  "client_name": "DeepSeek Harness (dsh-connectors)",
+  "client_uri": "https://github.com/JoblessJoe/dsh-connectors",
+  "logo_uri": "https://joblessjoe.github.io/dsh-connectors/icon.svg",
+  "redirect_uris": [
+    "http://127.0.0.1:47391/callback",
+    "http://127.0.0.1/callback"
+  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

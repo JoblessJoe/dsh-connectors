@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -145,5 +146,40 @@ test('stateful server restarts: "Session not found" reconnects and the call stil
   const out = await h.tools.get('mcp__st__echo').execute({ text: 'two' }, {})
   assert.equal(out.content[0].text, 'echo: two')
   server.kill()
+  h.dispose()
+})
+
+/** A fake MCP server + authorization server that publishes only the given AS metadata. */
+function fakeAuthServer(asMeta) {
+  return new Promise((resolve) => {
+    const srv = createServer((req, res) => {
+      const base = `http://127.0.0.1:${srv.address().port}`
+      const json = (o) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(o))
+      if (req.url.startsWith('/.well-known/oauth-protected-resource')) return json({ resource: `${base}/mcp`, authorization_servers: [base] })
+      if (req.url.startsWith('/.well-known/oauth-authorization-server')) return json({ issuer: base, authorization_endpoint: `${base}/authorize`, token_endpoint: `${base}/token`, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], ...asMeta(base) })
+      res.writeHead(401, { 'www-authenticate': `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"` }).end()
+    })
+    srv.listen(0, '127.0.0.1', () => resolve(srv))
+  })
+}
+
+test('sign-in picks the client identity: published identity (CIMD) with loopback, or a clear error', async () => {
+  const cimd = await fakeAuthServer(() => ({ client_id_metadata_document_supported: true }))
+  const h = fakeHost()
+  await h.call({ op: 'add', spec: { id: 'cimd', transport: 'http', url: `http://127.0.0.1:${cimd.address().port}/mcp` } })
+  const r = await h.call({ op: 'login', id: 'cimd', origin: 'https://dsh.example.com' })
+  assert.equal(r.ok, true, r.error)
+  assert.equal(r.loopback, true)
+  const u = new URL(r.url)
+  assert.equal(u.searchParams.get('client_id'), 'https://joblessjoe.github.io/dsh-connectors/client-metadata.json')
+  assert.match(u.searchParams.get('redirect_uri'), /^http:\/\/127\.0\.0\.1:\d+\/callback$/)
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256')
+  await h.call({ op: 'cancel', id: 'cimd' })
+
+  const none = await fakeAuthServer(() => ({}))
+  await h.call({ op: 'add', spec: { id: 'manual', transport: 'http', url: `http://127.0.0.1:${none.address().port}/mcp` } })
+  const m = await h.call({ op: 'login', id: 'manual', origin: 'https://dsh.example.com' })
+  assert.match(m.error, /register yourself.*https:\/\/dsh\.example\.com\/plugins\/dsh-connectors\/callback/)
+  cimd.close(); none.close()
   h.dispose()
 })

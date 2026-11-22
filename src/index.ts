@@ -160,9 +160,11 @@ export function apply(ctx: any, config: Config = {}) {
         // Back to the address this browser uses for dsh, so it finishes by itself.
         // `loopback: true` (or no origin) uses the paste-the-address fallback.
         const origin = body.loopback ? undefined : originOf(body.origin)
-        const url = await desk.start(c.spec, secrets, done, origin ? origin + CALLBACK : desk.redirect)
-        if (!url) await c.restart() // stored tokens were still good
-        return { url: url ?? null }
+        const started = await desk.start(c.spec, secrets, done, origin ? origin + CALLBACK : desk.redirect)
+        if (!started) await c.restart() // stored tokens were still good
+        // `loopback`: this server only takes the published identity, so it returns
+        // to 127.0.0.1 and the page shows the paste box when dsh runs elsewhere.
+        return { url: started?.url ?? null, loopback: started?.loopback ?? false }
       }
       case 'finish': return { id: await desk.finishFromText(String(body.text ?? '')) }
       case 'cancel': desk.cancel(String(body.id)); return {}

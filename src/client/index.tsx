@@ -97,9 +97,11 @@ async function startSignIn(id: string, loopback = false) {
   signIns.set(id, { loopback }); store.emit()
   try {
     // The provider sends the browser back to this same dsh address, so it finishes by itself.
-    const { url } = await api({ op: 'login', id, origin: window.location.origin, loopback })
+    const res = await api({ op: 'login', id, origin: window.location.origin, loopback })
+    const url = res.url
     if (!url) { tab?.close(); signIns.delete(id) } else {
-      signIns.set(id, { url, loopback })
+      // The host may switch to the loopback return (server only takes the published identity).
+      signIns.set(id, { url, loopback: res.loopback })
       if (tab) { tab.opener = null; tab.location.href = url }
     }
   } catch (e: any) {
@@ -346,7 +348,7 @@ function SignInCallout({ id }: { id: string }) {
             <div>Finish signing in on the page that just opened. This updates by itself. No tab? <a href={info.url} target="_blank" rel="noreferrer">Open it here</a>.</div>
           ) : (
             <>
-              <div>Sign in on the page that just opened (<a href={info.url} target="_blank" rel="noreferrer">open it here</a>). It ends on an error page at <code>127.0.0.1</code>; that's expected. Copy that page's full address and paste it here.</div>
+              <div>Sign in on the page that just opened (<a href={info.url} target="_blank" rel="noreferrer">open it here</a>). If dsh runs on this computer, this finishes by itself. Otherwise the page ends on an error at <code>127.0.0.1</code>; that's expected. Copy its full address and paste it here.</div>
               <div className="dcx-row">
                 <Input className="dcx-grow" value={text} placeholder="http://127.0.0.1:…/callback?code=…" onChange={(e) => { setText(e.target.value); setErr('') }} />
                 <Button variant="primary" size="sm" disabled={!text.includes('code=')} onClick={finish}>Finish</Button>

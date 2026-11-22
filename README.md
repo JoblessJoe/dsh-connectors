@@ -54,6 +54,12 @@ Nothing in dsh is patched. Both entries are registered by the plugin through dsh
 
 No setup and no fixed address: the plugin uses whatever address your browser opened dsh at (`http://localhost:3080`, `https://dsh.example.com`, a LAN IP). If you open dsh at a new address, the next sign-in registers it by itself.
 
+**How dsh-connectors identifies itself**, best first:
+
+1. **Your own OAuth client**, if you enter a client id under *Advanced* (for servers that require pre-registration).
+2. **Self-registration (DCR)** for your dsh address: the no-paste flow above. Most servers today.
+3. **The published identity** ([Client ID Metadata Document](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), the method newer MCP servers prefer): `https://joblessjoe.github.io/dsh-connectors/client-metadata.json`. It can only name fixed return addresses, so it returns to `127.0.0.1`: automatic when dsh runs on your computer, the paste box when it runs on a server.
+
 **Fallback:** a few providers only accept `localhost` return addresses. For those, click *Try the paste method*: the tab then ends on an error page at `http://127.0.0.1:47391/callback?code=…`; copy that address into the box and click **Finish**.
 
 ## Install
