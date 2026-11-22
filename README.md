@@ -19,11 +19,11 @@ npx @deepseek-ai/dsh plugin --profile web add dsh-connectors
 Reload the browser tab. **Connectors** appears in the sidebar, right below Projects. Full details under [Install](#install).
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JoblessJoe/dsh-connectors/main/.github/assets/connectors-panel.png" alt="The Connectors page: a connected Linear server with its tool list, Notion waiting for sign-in, a local filesystem server" width="100%">
+  <img src="https://raw.githubusercontent.com/JoblessJoe/dsh-connectors/main/.github/assets/connectors-panel.png?v=2" alt="The Connectors page: a connected Linear server with its tool list, Notion waiting for sign-in, a local filesystem server" width="100%">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JoblessJoe/dsh-connectors/main/.github/assets/add-dialog.png" alt="The Add connector dialog" width="520">
+  <img src="https://raw.githubusercontent.com/JoblessJoe/dsh-connectors/main/.github/assets/add-dialog.png?v=2" alt="The Add connector dialog" width="520">
   <br><sub>Add a connector: paste the URL, pick how it signs in. A new OAuth connector opens its sign-in page right away.</sub>
 </p>
 
