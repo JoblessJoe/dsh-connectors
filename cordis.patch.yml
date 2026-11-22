@@ -1,0 +1,5 @@
+# dsh-connectors bundle mount. A new plugin must be an `insert:` (a bare `- id:`
+# only patches an existing entry). Needs one dsh restart after install.
+- insert:
+    - id: dsh-connectors
+      name: 'dsh-connectors'
