@@ -1,43 +1,99 @@
 {
   "name": "dsh-connectors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude-style Connectors for DeepSeek Harness (dsh): add any MCP server from Settings → Connectors — remote with OAuth sign-in (works even when dsh runs on a headless server), bearer token, or a local command. Tokens refresh on their own, connections heal themselves, no YAML, no restart.",
   "icon": "./icon.svg",
   "homepage": "https://github.com/JoblessJoe/dsh-connectors#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/JoblessJoe/dsh-connectors.git" },
-  "bugs": { "url": "https://github.com/JoblessJoe/dsh-connectors/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoblessJoe/dsh-connectors.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JoblessJoe/dsh-connectors/issues"
+  },
   "author": "Johannes Tebbert <info@joblessjoe.com> (https://joblessjoe.com)",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["lib", "cordis.patch.yml", "icon.svg", "README.md", "LICENSE"],
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "platform": "web" },
-    "compatibility": { "dsh": ">=0.2.2-rc.1 <0.4.0-0" }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.2-rc.1 <0.4.0-0"
+    }
   },
   "dshhub": {
     "schemaVersion": 1,
     "displayName": "Connectors",
     "summary": "Add any MCP server from Settings → Connectors: OAuth sign-in (also on headless servers), bearer tokens or local commands. Auto token refresh and reconnect, per-tool switches, import from Claude Desktop JSON.",
-    "categories": ["MCP", "Integrations", "Web UI"],
-    "surfaces": ["host", "web"],
-    "capabilities": { "provides": [] },
-    "compatibility": { "dsh": ">=0.2.2-rc.1 <0.4.0-0", "node": ">=20" },
+    "categories": [
+      "MCP",
+      "Integrations",
+      "Web UI"
+    ],
+    "surfaces": [
+      "host",
+      "web"
+    ],
+    "capabilities": {
+      "provides": []
+    },
+    "compatibility": {
+      "dsh": ">=0.2.2-rc.1 <0.4.0-0",
+      "node": ">=20"
+    },
     "permissions": {
-      "network": ["the MCP servers you add"],
-      "process": ["local MCP server commands you add"]
+      "network": [
+        "the MCP servers you add"
+      ],
+      "process": [
+        "local MCP server commands you add"
+      ]
     }
   },
-  "keywords": ["deepseek", "deepseek-harness", "dsh", "dsh-plugin", "mcp", "model-context-protocol", "connectors", "oauth", "mcp-client", "remote-mcp", "claude-connectors", "dsh插件"],
-  "engines": { "node": ">=20" },
-  "peerDependencies": { "react": "^18.0.0 || ^19.0.0" },
-  "dependencies": { "@modelcontextprotocol/client": "2.2.0" },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "model-context-protocol",
+    "connectors",
+    "oauth",
+    "mcp-client",
+    "remote-mcp",
+    "claude-connectors",
+    "dsh插件"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.2.0"
+  },
   "devDependencies": {
     "@modelcontextprotocol/server": "2.2.0",
     "@modelcontextprotocol/node": "2.0.0",
