@@ -221,7 +221,9 @@ export class LoginDesk {
     const code = params.get('code')
     if (!code) throw new Error('That address has no sign-in code in it.')
     try {
-      const result = await auth(pending.provider, { serverUrl: pending.serverUrl, authorizationCode: code, ...(pending.scope ? { scope: pending.scope } : {}) })
+      // RFC 9207: servers that advertise it send `iss` back; the SDK checks it.
+      const iss = params.get('iss') ?? undefined
+      const result = await auth(pending.provider, { serverUrl: pending.serverUrl, authorizationCode: code, ...(iss ? { iss } : {}), ...(pending.scope ? { scope: pending.scope } : {}) } as any)
       if (result !== 'AUTHORIZED') throw new Error('The server did not accept the sign-in code.')
     } catch (e) {
       pending.done(e as Error)
