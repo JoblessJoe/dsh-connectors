@@ -73,6 +73,11 @@ function isAuthError(error: unknown): boolean {
   return /\b401\b|unauthori[sz]ed|invalid_token|invalid_grant/i.test(msg)
 }
 
+/** The connection or its server-side session is gone; a fresh connect fixes it. */
+export function isDeadSession(error: unknown): boolean {
+  return /session not found|\b404\b|closed|ECONNRESET|ECONNREFUSED|EPIPE|not connected|fetch failed|socket/i.test(errorText(error))
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -327,8 +332,10 @@ export class Connector {
             this.deps.onNeedsLogin(this.spec.id)
             throw new Error(`${label} needs a new sign-in: open Settings → Connectors and click Sign in.`)
           }
-          // A dead connection shows up as a failed call before onclose fires: reconnect and retry once.
-          if (/closed|ECONNRESET|EPIPE|not connected|fetch failed|socket/i.test(errorText(error)) && this.client) {
+          // A dead connection shows up as a failed call, not as onclose: over HTTP
+          // nothing stays open, so a restarted server only says "Session not found"
+          // (404, MCP spec: start a new session). Reconnect and retry once.
+          if (isDeadSession(error) && this.client) {
             this.down('Connection lost during a call')
             result = await call()
           } else throw error

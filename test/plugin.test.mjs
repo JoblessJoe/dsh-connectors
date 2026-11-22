@@ -52,9 +52,9 @@ function fakeHost() {
   return { tools, records, call, until, file, hit, dispose: () => disposers.forEach((d) => d()) }
 }
 
-function httpFixture(port, token) {
+function httpFixture(port, token, env = {}) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [fixture, 'http', String(port), ...(token ? [token] : [])], { stdio: ['ignore', 'pipe', 'inherit'] })
+    const p = spawn(process.execPath, [fixture, 'http', String(port), ...(token ? [token] : [])], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, ...env } })
     p.stdout.once('data', () => resolve(p))
   })
 }
@@ -130,4 +130,20 @@ test('import Claude Desktop JSON: stdio + http, Authorization header becomes a s
   assert.equal(rows[1].spec.auth, 'oauth')
   assert.equal(rows[2].bearer, 'abc')
   assert.deepEqual(rows[2].spec.headers, { 'X-Team': 't1' })
+})
+
+test('stateful server restarts: "Session not found" reconnects and the call still succeeds', async () => {
+  const port = 45000 + Math.floor(Math.random() * 900)
+  let server = await httpFixture(port, '', { STATEFUL: '1' })
+  const h = fakeHost()
+  await h.call({ op: 'add', spec: { id: 'st', transport: 'http', url: `http://127.0.0.1:${port}/mcp`, auth: 'none' } })
+  await h.until('st', 'connected')
+  assert.equal((await h.tools.get('mcp__st__echo').execute({ text: 'one' }, {})).content[0].text, 'echo: one')
+  server.kill(); await sleep(300)
+  server = await httpFixture(port, '', { STATEFUL: '1' })
+  // Still "connected" from the plugin's view; the old session id is now unknown to the server.
+  const out = await h.tools.get('mcp__st__echo').execute({ text: 'two' }, {})
+  assert.equal(out.content[0].text, 'echo: two')
+  server.kill()
+  h.dispose()
 })
